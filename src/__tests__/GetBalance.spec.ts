@@ -9,17 +9,22 @@ import { app } from '../app';
 let connection: Connection;
 
 describe('List Balance integration tests', () => {
-  const idGenerated = uuidV4();
+  const idGenerated1 = uuidV4();
+  const idGenerated2 = uuidV4();
   let token: string;
 
   beforeAll(async () => {
-    const password = await hash('1234', 8)
+    const password1 = await hash('1234', 8)
+    const password2 = await hash('4321', 8)
     connection = await createConnection();
     try {
       await connection.runMigrations()
 
       await connection.query(`INSERT INTO users(id, name, email, password, created_at, updated_at)
-      values('${idGenerated}', 'john', 'john@example.com', '${password}', 'NOW()', 'NOW()')`);
+      values('${idGenerated1}', 'john', 'john@example.com', '${password1}', 'NOW()', 'NOW()')`);
+
+      await connection.query(`INSERT INTO users(id, name, email, password, created_at, updated_at)
+      values('${idGenerated2}', 'Jeff', 'sanu@esejapmiw.ai', '${password2}', 'NOW()', 'NOW()')`);
 
     } catch (err) {
       console.error(err)
@@ -51,10 +56,19 @@ describe('List Balance integration tests', () => {
         Authorization: `Bearer ${token}`,
       })
 
-    const operation = await request(app).post('/api/v1/statements/withdraw')
+    await request(app).post('/api/v1/statements/withdraw')
       .send({
         amount: 250.60,
         description: 'Daily consumption'
+      })
+      .set({
+        Authorization: `Bearer ${token}`,
+      })
+
+    const operation = await request(app).post(`/api/v1/statements/transfers/${idGenerated2}`)
+      .send({
+        amount: 150.20,
+        description: 'Payment from service'
       })
       .set({
         Authorization: `Bearer ${token}`,
@@ -66,7 +80,7 @@ describe('List Balance integration tests', () => {
       })
 
     expect(response.status).toBe(200)
-    expect(response.body).toHaveProperty('balance')
+    expect(response.body.balance).toBeCloseTo(100)
     expect(response.body.statement).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -74,18 +88,19 @@ describe('List Balance integration tests', () => {
         }),
       ])
     )
+    expect(response.body.statement[2]).toEqual(
+      expect.objectContaining({
+        sender_id: operation.body.sender_id
+      })
+    )
   })
 
   it("GET - Should not be able to list balance if unauthenticated or unauthorized",
   async () => {
-    const response = await request(app).post('/api/v1/statements/balance')
-      .send({
-        amount: 650.60,
-        description: 'Daily consumption'
-      })
+    const response = await request(app).get('/api/v1/statements/balance')
       .set({
-        Authorization: `Bearer ${uuidV4()}`,
-      })
+        Authorization: `Bearer ${uuidV4()}`
+      });
 
     expect(response.status).toBe(401);
     expect(response.body).toHaveProperty('message');
